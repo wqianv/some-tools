@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 智能图片文字识别朗读工具 (Gemini Enhanced)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Tesseract.js -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <!-- 引入 Markdown 解析 (用于 AI 回复格式化) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans SC', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .drag-active { border-color: #3b82f6; background-color: #eff6ff; }
+        /* 加载动画 */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3b82f6;
+            width: 20px;
+            height: 20px;
+            -webkit-animation: spin 1s linear infinite; /* Safari */
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .gradient-text {
+            background: linear-gradient(to right, #4f46e5, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center py-6 px-4">
+
+    <!-- 顶部导航栏 -->
+    <nav class="w-full max-w-5xl flex justify-between items-center mb-6">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl">📸</span>
+            <h1 class="text-xl font-bold text-gray-800 tracking-tight">AI 图文助手 <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full ml-1">Gemini 版</span></h1>
+        </div>
+        <button onclick="toggleSettings()" class="text-sm bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-2 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543 .826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            API 设置
+        </button>
+    </nav>
+
+    <!-- 设置弹窗 -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">设置 Gemini API Key</h3>
+            <p class="text-sm text-gray-500 mb-4">
+                为了使用 AI 纠错、翻译和高级语音功能，请输入您的 Google Gemini API Key。
+                <br><span class="text-xs text-gray-400">*Key 仅保存在您的本地浏览器中。</span>
+            </p>
+            <input type="password" id="apiKeyInput" class="w-full border border-gray-300 rounded-lg px-4 py-2 mb-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="在此粘贴您的 API Key">
+            <div class="flex justify-end gap-2">
+                <button onclick="toggleSettings()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+                <button onclick="saveApiKey()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存</button>
+            </div>
+            <div class="mt-4 text-xs text-center text-gray-400">
+                还没有 Key? <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-500 hover:underline">去 Google AI Studio 免费获取</a>
+            </div>
+        </div>
+    </div>
+
+    <main class="w-full max-w-5xl bg-white rounded-xl shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[650px]">
+        
+        <!-- 左侧：图片上传与 OCR -->
+        <div class="w-full md:w-5/12 p-6 border-r border-gray-100 flex flex-col bg-gray-50/30">
+            <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">1. 图片来源</h2>
+
+            <div id="dropZone" class="flex-1 border-2 border-dashed border-gray-300 rounded-xl flex flex-col justify-center items-center p-4 transition-all cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 relative group min-h-[250px]">
+                <input type="file" id="fileInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                
+                <div id="uploadPrompt" class="text-center transition-opacity duration-300">
+                    <div class="mb-3 mx-auto w-14 h-14 bg-white shadow-sm rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <p class="text-gray-700 font-medium">点击或拖拽上传图片</p>
+                    <p class="text-gray-400 text-xs mt-1">本地处理，保护隐私</p>
+                </div>
+
+                <img id="imagePreview" class="hidden max-h-[300px] w-auto object-contain rounded-lg shadow-sm z-20" alt="Preview">
+                <!-- 重新上传覆盖层 -->
+                <div id="reuploadOverlay" class="hidden absolute inset-0 bg-black/40 z-30 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span class="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">更换图片</span>
+                </div>
+            </div>
+
+            <!-- 识别控制 -->
+            <div class="mt-5 space-y-3">
+                <div class="flex items-center justify-between">
+                     <label class="text-xs font-semibold text-gray-500">识别方式</label>
+                     <select id="langSelect" class="border border-gray-200 rounded-md px-2 py-1 text-xs bg-white text-gray-700 focus:outline-none focus:border-blue-500">
+                        <option value="chi_sim">简体中文 (本地)</option>
+                        <option value="chi_tra">繁体中文 (本地)</option>
+                        <option value="eng">English Only (本地)</option>
+                        <option value="chi_sim+eng">中英混合 (本地)</option>
+                    </select>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2">
+                    <!-- 方式 A: 本地识别 -->
+                    <button id="recognizeBtn" class="bg-gray-800 hover:bg-gray-900 text-white font-medium py-2.5 px-3 rounded-xl transition shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed flex flex-col justify-center items-center text-sm gap-1" disabled>
+                        <div class="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            本地识图
+                        </div>
+                        <span class="text-[10px] text-gray-400 font-normal">免费/离线/精度一般</span>
+                    </button>
+
+                    <!-- 方式 B: AI 识别 -->
+                    <button id="aiRecognizeBtn" class="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-2.5 px-3 rounded-xl transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex flex-col justify-center items-center text-sm gap-1" disabled>
+                        <div class="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Gemini 强力识图
+                        </div>
+                        <span class="text-[10px] text-purple-100 font-normal">超高精度/需API Key</span>
+                    </button>
+                </div>
+
+                <!-- 进度条 -->
+                <div id="progressContainer" class="hidden">
+                    <div class="flex justify-between text-xs text-gray-500 mb-1">
+                        <span id="statusText">初始化...</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                        <div id="progressBar" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：AI 增强工作区 -->
+        <div class="w-full md:w-7/12 p-6 flex flex-col bg-white">
+            <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex justify-between items-center">
+                <span>2. 智能处理与朗读</span>
+                <span class="text-xs text-blue-600 font-normal bg-blue-50 px-2 py-1 rounded hidden" id="aiBadge">✨ AI 功能已就绪</span>
+            </h2>
+
+            <!-- 文本区域 -->
+            <div class="flex-1 relative group">
+                <textarea id="resultText" class="w-full h-full p-4 border border-gray-200 bg-gray-50 rounded-xl resize-none focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none text-gray-700 leading-relaxed text-lg transition-colors" placeholder="OCR 识别结果将出现在这里..." spellcheck="false"></textarea>
+                
+                <!-- 快捷按钮组 -->
+                <div class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onclick="copyText()" class="bg-white/90 p-1.5 rounded-md shadow-sm border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition" title="复制文本">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                    </button>
+                    <button onclick="clearText()" class="bg-white/90 p-1.5 rounded-md shadow-sm border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300 transition" title="清空">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 功能控制区 -->
+            <div class="mt-5 space-y-4">
+                
+                <!-- Gemini AI 工具栏 -->
+                <div class="flex flex-wrap gap-2 pb-4 border-b border-gray-100">
+                    <button onclick="aiCorrect()" class="flex-1 min-w-[100px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 border border-indigo-200 group relative overflow-hidden">
+                         <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                         <span class="relative z-10 flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            AI 纠错
+                         </span>
+                    </button>
+                    
+                    <button onclick="aiTranslate()" class="flex-1 min-w-[100px] bg-purple-50 hover:bg-purple-100 text-purple-700 text-sm font-medium py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 border border-purple-200 group relative overflow-hidden">
+                        <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        <span class="relative z-10 flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                            </svg>
+                            AI 翻译
+                        </span>
+                    </button>
+
+                    <button onclick="summarize()" class="flex-1 min-w-[100px] bg-teal-50 hover:bg-teal-100 text-teal-700 text-sm font-medium py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 border border-teal-200 group relative overflow-hidden">
+                        <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        <span class="relative z-10 flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                            </svg>
+                            生成摘要
+                        </span>
+                    </button>
+                </div>
+
+                <!-- 朗读控制 -->
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs font-bold text-gray-500 uppercase">朗读引擎</span>
+                        <div class="flex bg-white rounded-lg p-0.5 border border-gray-200 shadow-sm">
+                            <button onclick="setEngine('local')" id="engineLocalBtn" class="px-3 py-1 text-xs rounded-md font-medium transition-colors bg-blue-100 text-blue-700">本地</button>
+                            <button onclick="setEngine('ai')" id="engineAiBtn" class="px-3 py-1 text-xs rounded-md font-medium text-gray-500 hover:text-gray-900 transition-colors flex items-center gap-1">
+                                <span>Gemini AI</span>
+                                <span class="text-[10px] bg-gradient-to-r from-indigo-500 to-pink-500 text-white px-1 rounded-sm">PRO</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 本地语音选择 (默认显示) -->
+                    <div id="localVoiceControls">
+                        <select id="voiceSelect" class="w-full border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white mb-2">
+                            <option value="">加载本地语音库中...</option>
+                        </select>
+                    </div>
+                    
+                    <!-- AI 语音状态 (默认隐藏) -->
+                    <div id="aiVoiceControls" class="hidden mb-2">
+                         <div class="text-sm text-gray-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 flex items-center gap-2">
+                            <svg class="animate-pulse h-4 w-4 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                            </svg>
+                            正在使用 Gemini TTS 模型 (Kore Voice)
+                         </div>
+                    </div>
+
+                    <div class="flex gap-2 mt-2">
+                        <button id="speakBtn" onclick="speakHandler()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition shadow-md shadow-green-100 flex justify-center items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            </svg>
+                            <span id="speakBtnText">朗读</span>
+                        </button>
+                        <button id="stopBtn" onclick="stopHandler()" class="bg-red-50 hover:bg-red-100 text-red-600 font-medium py-2 px-4 rounded-lg transition border border-red-100 flex justify-center items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- 播放器 (隐藏) -->
+    <audio id="audioPlayer" class="hidden"></audio>
+
+    <script>
+        // --- 全局变量与配置 ---
+        const els = {
+            dropZone: document.getElementById('dropZone'),
+            fileInput: document.getElementById('fileInput'),
+            imagePreview: document.getElementById('imagePreview'),
+            uploadPrompt: document.getElementById('uploadPrompt'),
+            reuploadOverlay: document.getElementById('reuploadOverlay'),
+            recognizeBtn: document.getElementById('recognizeBtn'),
+            aiRecognizeBtn: document.getElementById('aiRecognizeBtn'), // 新增
+            resultText: document.getElementById('resultText'),
+            progressContainer: document.getElementById('progressContainer'),
+            progressBar: document.getElementById('progressBar'),
+            statusText: document.getElementById('statusText'),
+            progressPercent: document.getElementById('progressPercent'),
+            voiceSelect: document.getElementById('voiceSelect'),
+            langSelect: document.getElementById('langSelect'),
+            settingsModal: document.getElementById('settingsModal'),
+            apiKeyInput: document.getElementById('apiKeyInput'),
+            aiBadge: document.getElementById('aiBadge'),
+            audioPlayer: document.getElementById('audioPlayer'),
+            localVoiceControls: document.getElementById('localVoiceControls'),
+            aiVoiceControls: document.getElementById('aiVoiceControls'),
+            engineLocalBtn: document.getElementById('engineLocalBtn'),
+            engineAiBtn: document.getElementById('engineAiBtn'),
+            speakBtn: document.getElementById('speakBtn'),
+            speakBtnText: document.getElementById('speakBtnText')
+        };
+
+        let selectedFile = null;
+        let selectedFileDataUrl = null; // 存储 Base64
+        let synth = window.speechSynthesis;
+        let localVoices = [];
+        let currentEngine = 'local';
+        
+        let userApiKey = localStorage.getItem('gemini_api_key') || '';
+        const envApiKey = (typeof apiKey !== 'undefined' && apiKey) ? apiKey : '';
+
+        function getApiKey() { return userApiKey || envApiKey; }
+
+        function checkApiKey() {
+            if (getApiKey()) {
+                els.aiBadge.classList.remove('hidden');
+                els.apiKeyInput.value = userApiKey;
+            } else {
+                els.aiBadge.classList.add('hidden');
+            }
+        }
+        checkApiKey();
+
+        // --- 设置相关 ---
+        function toggleSettings() { els.settingsModal.classList.toggle('hidden'); }
+
+        function saveApiKey() {
+            const key = els.apiKeyInput.value.trim();
+            if (key) {
+                userApiKey = key;
+                localStorage.setItem('gemini_api_key', key);
+                checkApiKey();
+                toggleSettings();
+                showToast("API Key 已保存", "success");
+            } else {
+                showToast("请输入有效的 Key", "error");
+            }
+        }
+
+        // --- 文件处理逻辑 ---
+        const handleFile = (file) => {
+            if (!file || !file.type.startsWith('image/')) return;
+            selectedFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                selectedFileDataUrl = e.target.result; // 保存 Base64 用于 AI
+                els.imagePreview.src = selectedFileDataUrl;
+                els.imagePreview.classList.remove('hidden');
+                els.reuploadOverlay.classList.remove('hidden');
+                els.uploadPrompt.classList.add('hidden');
+                els.recognizeBtn.disabled = false;
+                els.aiRecognizeBtn.disabled = false;
+                els.resultText.value = '';
+                els.progressContainer.classList.add('hidden');
+            };
+            reader.readAsDataURL(file);
+        };
+
+        els.fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        ['dragenter', 'dragover'].forEach(e => els.dropZone.addEventListener(e, (ev) => { ev.preventDefault(); els.dropZone.classList.add('drag-active'); }));
+        ['dragleave', 'drop'].forEach(e => els.dropZone.addEventListener(e, (ev) => { ev.preventDefault(); els.dropZone.classList.remove('drag-active'); }));
+        els.dropZone.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
+
+        // --- 方式 A: 本地 OCR ---
+        function smartFormat(text) {
+            if (!text) return "";
+            let formatted = text.replace(/\s+/g, ' ');
+            formatted = formatted.replace(/([^\x00-\xff])\s+([^\x00-\xff])/g, '$1$2');
+            return formatted.trim();
+        }
+
+        els.recognizeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            els.recognizeBtn.disabled = true;
+            els.aiRecognizeBtn.disabled = true;
+            
+            try {
+                const { data: { text } } = await Tesseract.recognize(selectedFile, els.langSelect.value, {
+                    logger: m => {
+                        if (m.status === 'recognizing text' || m.status.includes('loading')) {
+                            els.progressContainer.classList.remove('hidden');
+                            els.statusText.innerText = m.status === 'recognizing text' ? '本地引擎识别中...' : '加载离线模型...';
+                            const pct = Math.floor(m.progress * 100);
+                            els.progressPercent.innerText = pct + '%';
+                            els.progressBar.style.width = pct + '%';
+                        }
+                    }
+                });
+                els.resultText.value = smartFormat(text) || "本地引擎未识别出文字，请尝试 AI 识图。";
+            } catch (err) {
+                els.resultText.value = "本地识别出错: " + err.message;
+            } finally {
+                els.recognizeBtn.disabled = false;
+                els.aiRecognizeBtn.disabled = false;
+                setTimeout(() => els.progressContainer.classList.add('hidden'), 1500);
+            }
+        });
+
+        // --- 方式 B: AI 识图 (Gemini Vision) ---
+        els.aiRecognizeBtn.addEventListener('click', async () => {
+            if (!selectedFileDataUrl) return;
+            const key = getApiKey();
+            if (!key) return toggleSettings();
+
+            els.recognizeBtn.disabled = true;
+            els.aiRecognizeBtn.disabled = true;
+            setLoading(true, "Gemini 正在观察图片...");
+
+            try {
+                // 移除 base64 头部 (data:image/png;base64,)
+                const base64Data = selectedFileDataUrl.split(',')[1];
+                const mimeType = selectedFile.type;
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: "Please extract all text from this image exactly as it appears. If there are tables or structures, represent them clearly. Do not add any conversational text like 'Here is the text'. Just output the raw text content." },
+                                { inlineData: { mimeType: mimeType, data: base64Data } }
+                            ]
+                        }]
+                    })
+                });
+
+                if (!response.ok) throw new Error("API 请求失败");
+                const data = await response.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "未识别到文字";
+                
+                els.resultText.value = text.trim();
+                showToast("AI 识别完成", "success");
+
+            } catch (e) {
+                els.resultText.value = els.resultText.dataset.original || "";
+                showToast("AI 识图失败: " + e.message, "error");
+            } finally {
+                setLoading(false);
+                els.recognizeBtn.disabled = false;
+                els.aiRecognizeBtn.disabled = false;
+            }
+        });
+
+        // --- AI 文本处理 (纠错/翻译/摘要) ---
+        async function callGeminiText(prompt) {
+            const key = getApiKey();
+            if (!key) { toggleSettings(); throw new Error("请设置 Key"); }
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            if (!response.ok) throw new Error("请求失败");
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        function setLoading(isLoading, text = "") {
+            if (isLoading) {
+                const originalVal = els.resultText.value;
+                if (!els.resultText.dataset.original) els.resultText.dataset.original = originalVal;
+                els.resultText.value = "✨ AI 正在思考中...\n" + text;
+                els.resultText.disabled = true;
+            } else {
+                els.resultText.disabled = false;
+            }
+        }
+
+        async function aiCorrect() {
+            const text = els.resultText.value;
+            if (!text || text.includes("✨")) return showToast("请先识别文字", "error");
+            setLoading(true, "正在修复...");
+            try {
+                const res = await callGeminiText(`请修复以下 OCR 结果中的错误：\n\n"${text}"`);
+                els.resultText.value = res.trim();
+            } catch (e) { els.resultText.value = els.resultText.dataset.original; showToast(e.message, "error"); }
+            finally { setLoading(false); }
+        }
+
+        async function aiTranslate() {
+            const text = els.resultText.value;
+            if (!text || text.includes("✨")) return showToast("请先识别文字", "error");
+            setLoading(true, "正在翻译...");
+            try {
+                const hasChinese = /[\u4e00-\u9fa5]/.test(text);
+                const target = hasChinese ? "English" : "Simplified Chinese";
+                const res = await callGeminiText(`Translate to ${target}:\n\n"${text}"`);
+                els.resultText.value = res.trim();
+            } catch (e) { els.resultText.value = els.resultText.dataset.original; showToast(e.message, "error"); }
+            finally { setLoading(false); }
+        }
+
+        async function summarize() {
+            const text = els.resultText.value;
+            if (!text || text.includes("✨")) return showToast("请先识别文字", "error");
+            setLoading(true, "正在摘要...");
+            try {
+                const res = await callGeminiText(`生成中文摘要：\n\n"${text}"`);
+                els.resultText.value = text + "\n\n--- ✨ AI 摘要 ---\n" + res.trim();
+            } catch (e) { els.resultText.value = els.resultText.dataset.original; showToast(e.message, "error"); }
+            finally { setLoading(false); }
+        }
+
+        // --- TTS 逻辑 ---
+        function setEngine(engine) {
+            currentEngine = engine;
+            if (engine === 'local') {
+                els.engineLocalBtn.className = "px-3 py-1 text-xs rounded-md font-medium transition-colors bg-blue-100 text-blue-700";
+                els.engineAiBtn.className = "px-3 py-1 text-xs rounded-md font-medium text-gray-500 hover:text-gray-900 transition-colors flex items-center gap-1";
+                els.localVoiceControls.classList.remove('hidden');
+                els.aiVoiceControls.classList.add('hidden');
+            } else {
+                if (!getApiKey()) return toggleSettings();
+                els.engineLocalBtn.className = "px-3 py-1 text-xs rounded-md font-medium text-gray-500 hover:text-gray-900 transition-colors";
+                els.engineAiBtn.className = "px-3 py-1 text-xs rounded-md font-medium bg-gradient-to-r from-indigo-500 to-pink-500 text-white shadow-sm flex items-center gap-1";
+                els.localVoiceControls.classList.add('hidden');
+                els.aiVoiceControls.classList.remove('hidden');
+            }
+        }
+        window.setEngine = setEngine;
+
+        function initLocalVoices() {
+            localVoices = synth.getVoices();
+            els.voiceSelect.innerHTML = '';
+            const zh = localVoices.filter(v => v.lang.includes('zh') || v.lang.includes('CN'));
+            const en = localVoices.filter(v => !v.lang.includes('zh'));
+            const add = (v, p) => { const o = document.createElement('option'); o.text = `${v.name}`; o.value = v.name; p.appendChild(o); };
+            if (zh.length) { const g = document.createElement('optgroup'); g.label = "中文"; zh.forEach(v => add(v, g)); els.voiceSelect.appendChild(g); els.voiceSelect.value = zh[0].name; }
+            if (en.length) { const g = document.createElement('optgroup'); g.label = "其他"; en.forEach(v => add(v, g)); els.voiceSelect.appendChild(g); }
+        }
+        speechSynthesis.onvoiceschanged = initLocalVoices;
+        initLocalVoices();
+
+        async function speakHandler() {
+            const text = els.resultText.value;
+            if (!text) return showToast("无内容", "error");
+
+            if (currentEngine === 'local') {
+                if (synth.speaking) synth.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                const v = localVoices.find(v => v.name === els.voiceSelect.value);
+                if (v) u.voice = v;
+                u.onstart = () => { els.speakBtn.disabled = true; els.speakBtnText.innerText = "朗读中..."; };
+                u.onend = () => { els.speakBtn.disabled = false; els.speakBtnText.innerText = "朗读"; };
+                synth.speak(u);
+            } else {
+                const key = getApiKey();
+                if (!key) return toggleSettings();
+                els.speakBtn.disabled = true;
+                els.speakBtnText.innerText = "生成语音...";
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${key}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: text }] }],
+                            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } }
+                        })
+                    });
+                    if (!res.ok) throw new Error("TTS 失败");
+                    const d = await res.json();
+                    const audio = d.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                    if (!audio) throw new Error("无音频");
+                    
+                    const pcm = base64ToArrayBuffer(audio);
+                    const wav = createWavFile(pcm, 24000);
+                    const blob = new Blob([wav], { type: 'audio/wav' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    els.audioPlayer.src = url;
+                    els.audioPlayer.play();
+                    els.speakBtnText.innerText = "AI 正在朗读...";
+                    els.audioPlayer.onended = () => { els.speakBtn.disabled = false; els.speakBtnText.innerText = "朗读"; URL.revokeObjectURL(url); };
+                } catch (e) { console.error(e); showToast(e.message, "error"); els.speakBtn.disabled = false; els.speakBtnText.innerText = "朗读"; }
+            }
+        }
+
+        function stopHandler() {
+            if (currentEngine === 'local') synth.cancel(); else { els.audioPlayer.pause(); els.audioPlayer.currentTime = 0; }
+            els.speakBtn.disabled = false;
+            els.speakBtnText.innerText = "朗读";
+        }
+
+        // --- Utils ---
+        function copyText() { els.resultText.select(); document.execCommand('copy'); showToast("已复制", "success"); }
+        function clearText() { if(confirm("清空？")) els.resultText.value = ""; }
+        function showToast(msg, type="info") {
+            const t = document.createElement('div');
+            t.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg text-white text-sm z-50 ${type === 'error' ? 'bg-red-500' : 'bg-gray-800'}`;
+            t.innerText = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+        function base64ToArrayBuffer(base64) {
+            const s = window.atob(base64); const l = s.length; const b = new Uint8Array(l);
+            for (let i=0; i<l; i++) b[i] = s.charCodeAt(i); return b.buffer;
+        }
+        function createWavFile(samples, rate) {
+            const b = new ArrayBuffer(44 + samples.byteLength); const v = new DataView(b);
+            const w = (o, s) => { for (let i=0; i<s.length; i++) v.setUint8(o+i, s.charCodeAt(i)); };
+            w(0, 'RIFF'); v.setUint32(4, 36+samples.byteLength, true); w(8, 'WAVE'); w(12, 'fmt ');
+            v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+            v.setUint32(24, rate, true); v.setUint32(28, rate*2, true); v.setUint16(32, 2, true);
+            v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, samples.byteLength, true);
+            new Uint8Array(b, 44).set(new Uint8Array(samples)); return b;
+        }
+
+        // Exports
+        window.aiCorrect = aiCorrect; window.aiTranslate = aiTranslate; window.summarize = summarize;
+        window.copyText = copyText; window.clearText = clearText;
+        window.speakHandler = speakHandler; window.stopHandler = stopHandler;
+        window.toggleSettings = toggleSettings; window.saveApiKey = saveApiKey;
+    </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+This is a test for fantuan secret scanning.
+fantuan_api_key = "123456"

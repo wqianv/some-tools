@@ -1,2 +1,6 @@
 This is a test for fantuan secret scanning.
 fantuan_api_key = "123456"
+
+
+# Testing again
+fantuan_secret_token = "ABC-123-TEST-NOW"
